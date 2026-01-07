@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { minioClient } from "@/lib/minio";
+import prisma from "@/lib/prisma";
+
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 // Server-side file validation schema
 const fileSchema = z.object({
@@ -8,8 +11,8 @@ const fileSchema = z.object({
     .instanceof(File)
     .refine((file) => file.size > 0, "File is required")
     .refine(
-      (file) => file.size <= 10 * 1024 * 1024,
-      "File size must be less than 10MB"
+      (file) => file.size <= MAX_FILE_SIZE,
+      "File size must be less than 100MB"
     )
     .refine(
       (file) =>
@@ -31,10 +34,7 @@ export async function POST(req: Request) {
     const file = formData.get("file") as File;
 
     if (!file) {
-      return NextResponse.json(
-        { error: "No file provided" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
     // Validate file with Zod
@@ -42,14 +42,12 @@ export async function POST(req: Request) {
 
     if (!validation.success) {
       const errors = validation.error.issues.map((err) => err.message);
-      return NextResponse.json(
-        { error: errors.join(", ") },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: errors.join(", ") }, { status: 400 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const fileName = `${Date.now()}-${file.name}`;
+    const url = `${process.env.MINIO_URL}/${process.env.MINIO_BUCKET}/${fileName}`;
 
     await minioClient.putObject(
       process.env.MINIO_BUCKET!,
@@ -61,10 +59,20 @@ export async function POST(req: Request) {
       }
     );
 
+    const row = await prisma.file.create({
+      data: {
+        fileName,
+        url,
+        size: file.size,
+        bucket: process.env.MINIO_BUCKET!,
+        originalName: file.name,
+      },
+    });
+
     return NextResponse.json({
       success: true,
-      fileName,
-      url: `http://localhost:9000/${process.env.MINIO_BUCKET}/${fileName}`,
+      data: row,
+      url,
     });
   } catch (error) {
     console.error("Upload error:", error);

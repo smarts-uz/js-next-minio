@@ -71,7 +71,7 @@ export default function Upload() {
         body: formData,
       });
 
-      const data = await response.json();
+      const { data } = await response.json();
 
       if (!response.ok) {
         setErrors({ file: [data.error || "Upload failed"] });
@@ -81,10 +81,9 @@ export default function Upload() {
       setSuccess(`File "${data.fileName}" uploaded successfully!`);
       setUploadedUrl(data.url);
       setSelectedFile(null);
-      // Reset form
-      e.currentTarget.reset();
     } catch (error) {
       setErrors({ file: ["An error occurred during upload"] });
+      console.error("Upload error:", error);
     } finally {
       setUploading(false);
     }
