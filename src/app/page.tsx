@@ -1,6 +1,14 @@
 import Upload from "@/components/upload-file";
+import FilesGrid from "@/components/files-grid";
+import prisma from "@/lib/prisma";
 
-export default function Home() {
+export default async function Home() {
+  const files = await prisma.file.findMany({
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
   return (
     <div className="min-h-screen bg-linear-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 py-12 px-4">
       <div className="max-w-4xl mx-auto">
@@ -17,8 +25,8 @@ export default function Home() {
           <Upload />
         </div>
 
-        <div className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">
-          <p>Powered by Next.js, MinIO, and Zod validation</p>
+        <div className="mt-8">
+          <FilesGrid files={files} />
         </div>
       </div>
     </div>
