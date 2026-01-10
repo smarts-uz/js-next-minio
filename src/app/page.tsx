@@ -1,6 +1,7 @@
 import Upload from "@/components/upload-file";
 import FilesGrid from "@/components/files-grid";
 import prisma from "@/lib/prisma";
+import UppyUploader from "@/components/uppy-upload";
 
 export default async function Home() {
   const files = await prisma.file.findMany({
@@ -25,7 +26,11 @@ export default async function Home() {
           <Upload />
         </div>
 
-        <div className="mt-8">
+        <div className="mt-4 mx-auto">
+          <UppyUploader />
+        </div>
+
+        <div className="mt-4">
           <FilesGrid files={files} />
         </div>
       </div>
