@@ -1,31 +1,57 @@
 import { NextResponse } from "next/server";
+import { FileStatus } from "@/generated/prisma/enums";
 import { minioClient } from "@/lib/minio";
 import prisma from "@/lib/prisma";
+import z from "zod";
+
+const uploadSchema = z.object({
+  fileName: z.string().min(1, "File name is required"),
+  originalName: z.string().min(1, "Original name is required"),
+  size: z.number().positive("Size must be a positive number"),
+});
 
 export async function POST(req: Request) {
   try {
-    const { filename, contentType } = await req.json();
-
+    const body = await req.json();
+    const { fileName, originalName, size } = uploadSchema.parse(body);
     const bucketName = process.env.MINIO_BUCKET!;
-    const objectName = `${Date.now()}-${filename}`;
 
-    // Generate presigned POST URL (15 minutes expiry)
+    const objectName = `${Date.now()}-${fileName}`;
+    const url = `${process.env.MINIO_URL}/${bucketName}/${objectName}`;
+
+    // Generate presigned PUT URL (15 minutes expiry)
     const presignedUrl = await minioClient.presignedPutObject(
       bucketName,
       objectName,
       15 * 60 // 15 minutes
     );
 
+    // Create pending record
+    const row = await prisma.file.create({
+      data: {
+        fileName: objectName,
+        url,
+        size,
+        bucket: bucketName,
+        originalName,
+        status: FileStatus.pending, // Status is pending until upload completes
+      },
+    });
+
     return NextResponse.json({
       url: presignedUrl,
       method: "PUT",
-      fields: {},
-      headers: {
-        "Content-Type": contentType || "application/octet-stream",
-      },
       objectName,
+      fileId: row.id, // Return the database ID
+      success: true,
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Validation failed", details: error.issues },
+        { status: 400 }
+      );
+    }
     console.error("Presigned URL error:", error);
     return NextResponse.json(
       { error: "Failed to generate upload URL" },
@@ -34,33 +60,38 @@ export async function POST(req: Request) {
   }
 }
 
-// New endpoint to save file metadata after successful upload
+const updateSchema = z.object({
+  fileId: z.uuid({ error: "Invalid file ID" }),
+  contentType: z.string().optional(),
+});
+
 export async function PUT(req: Request) {
   try {
-    const { fileName, originalName, size, contentType } = await req.json();
+    const body = await req.json();
+    const { fileId } = updateSchema.parse(body);
 
-    const bucketName = process.env.MINIO_BUCKET!;
-    const url = `${process.env.MINIO_URL}/${bucketName}/${fileName}`;
-
-    const row = await prisma.file.create({
+    // Update status to uploaded
+    const updatedFile = await prisma.file.update({
+      where: { id: fileId },
       data: {
-        fileName,
-        url,
-        size,
-        bucket: bucketName,
-        originalName,
+        status: FileStatus.uploaded,
       },
     });
 
     return NextResponse.json({
       success: true,
-      data: row,
-      url,
+      data: updatedFile,
     });
   } catch (error) {
-    console.error("Metadata save error:", error);
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Validation failed", details: error.issues },
+        { status: 400 }
+      );
+    }
+    console.error("Update file error:", error);
     return NextResponse.json(
-      { error: "Failed to save file metadata" },
+      { error: "Failed to update file status" },
       { status: 500 }
     );
   }

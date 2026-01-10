@@ -2,16 +2,16 @@
 
 import "@uppy/core/css/style.min.css";
 import "@uppy/dashboard/css/style.min.css";
-import "@uppy/webcam/css/style.min.css";
-import "@uppy/image-editor/css/style.min.css";
 
 import AwsS3 from "@uppy/aws-s3";
 import Uppy from "@uppy/core";
 import Dashboard from "@uppy/react/dashboard";
 import { useMemo } from "react";
-import Webcam from "@uppy/webcam";
-import ImageEditor from "@uppy/image-editor";
 import dynamic from "next/dynamic";
+import axios from "axios";
+
+const FILE_TYPES = ["image/png", "image/jpeg", "image/jpg"];
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 const UppyUploaderComponent = () => {
   // Initialize Uppy instance
@@ -20,33 +20,25 @@ const UppyUploaderComponent = () => {
       autoProceed: false,
       allowMultipleUploadBatches: false,
       restrictions: {
-        maxFileSize: 5 * 1024 * 1024,
-        allowedFileTypes: ["image/png", "image/jpeg", "image/jpg"],
+        maxFileSize: MAX_FILE_SIZE,
+        allowedFileTypes: FILE_TYPES,
         maxNumberOfFiles: 1,
         minNumberOfFiles: 1,
       },
     })
-      .use(Webcam, {
-        mirror: true,
-        modes: ["picture"], // or video if needed
-      })
       .use(AwsS3, {
         endpoint: "/api/upload-presigned",
         getUploadParameters: async (file) => {
-          const response = await fetch("/api/upload-presigned", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              filename: file.name,
-              contentType: file.type,
-            }),
+          const { data } = await axios.post("/api/upload-presigned", {
+            fileName: file.name,
+            originalName: file.name,
+            size: file.size,
           });
 
-          const data = await response.json();
-          
           // Store metadata for later use
           file.meta.serverFileName = data.objectName;
-          
+          file.meta.fileId = data.fileId; // Store the database ID
+
           return {
             method: data.method,
             url: data.url,
@@ -55,38 +47,15 @@ const UppyUploaderComponent = () => {
           };
         },
       })
-      .use(ImageEditor, {
-        quality: 0.9,
-        cropperOptions: {
-          aspectRatio: 1,
-          viewMode: 1,
-        },
-        actions: {
-          revert: true,
-          rotate: true,
-          granularRotate: true,
-          flip: true,
-          zoomIn: true,
-          zoomOut: true,
-          cropSquare: true,
-        },
-      })
-      .on("upload-success", async (file, response) => {
-        // Save file metadata to database after successful upload
+      .on("upload-success", async (file) => {
         if (file) {
           try {
-            await fetch("/api/upload-presigned", {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                fileName: file.meta.serverFileName,
-                originalName: file.name,
-                size: file.size,
-                contentType: file.type,
-              }),
+            await axios.put("/api/upload-presigned", {
+              fileId: file.meta.fileId,
+              contentType: file.type,
             });
           } catch (error) {
-            console.error("Failed to save file metadata:", error);
+            console.error("Failed to update file status:", error);
           }
         }
       });

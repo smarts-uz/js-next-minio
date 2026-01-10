@@ -7,12 +7,19 @@ datasource db {
   provider = "postgresql"
 }
 
+enum FileStatus {
+  pending
+  uploaded
+  failed
+}
+
 model File {
-  id           String   @id @default(uuid())
+  id           String     @id @default(uuid())
   bucket       String?
   fileName     String?
   originalName String?
   size         Float?
+  status       FileStatus @default(pending)
   url          String?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime   @default(now())
 }
