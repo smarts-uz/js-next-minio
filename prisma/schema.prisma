@@ -13,6 +13,11 @@ enum FileStatus {
   failed
 }
 
+enum FileExposure {
+  private
+  public
+}
+
 model File {
   id           String     @id @default(uuid())
   bucket       String?
@@ -20,6 +25,7 @@ model File {
   originalName String?
   size         Float?
   status       FileStatus @default(pending)
+  exposure     FileExposure @default(public)
   url          String?
   createdAt    DateTime   @default(now())
 }

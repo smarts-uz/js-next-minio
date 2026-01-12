@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { FileStatus } from "@/generated/prisma/enums";
+import { FileStatus, FileExposure } from "@/generated/prisma/enums";
 import { minioClient } from "@/lib/minio";
 import prisma from "@/lib/prisma";
 import z from "zod";
@@ -8,13 +8,18 @@ const uploadSchema = z.object({
   fileName: z.string().min(1, "File name is required"),
   originalName: z.string().min(1, "Original name is required"),
   size: z.number().positive("Size must be a positive number"),
+  isPrivate: z.boolean().default(false),
 });
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { fileName, originalName, size } = uploadSchema.parse(body);
-    const bucketName = process.env.MINIO_BUCKET!;
+    const { fileName, originalName, size, isPrivate } = uploadSchema.parse(body);
+    
+    // Select bucket based on privacy setting
+    const bucketName = isPrivate 
+      ? process.env.MINIO_PRIVATE_BUCKET! 
+      : process.env.MINIO_BUCKET!;
 
     const objectName = `${Date.now()}-${fileName}`;
     const url = `${process.env.MINIO_URL}/${bucketName}/${objectName}`;
@@ -35,6 +40,7 @@ export async function POST(req: Request) {
         bucket: bucketName,
         originalName,
         status: FileStatus.pending, // Status is pending until upload completes
+        exposure: isPrivate ? FileExposure.private : FileExposure.public,
       },
     });
 

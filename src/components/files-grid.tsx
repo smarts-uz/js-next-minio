@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { File } from "@/generated/prisma/client";
+import axios from "axios";
 
 interface FilesGridProps {
   files: File[];
@@ -10,6 +11,44 @@ interface FilesGridProps {
 
 export default function FilesGrid({ files }: FilesGridProps) {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [presignedUrls, setPresignedUrls] = useState<Record<string, string>>({});
+
+  // Fetch presigned URLs for private images
+  useEffect(() => {
+    const fetchPresignedUrls = async () => {
+      const privateFiles = files.filter(file => file.exposure === "private");
+      
+      for (const file of privateFiles) {
+        if (file.bucket && file.fileName && !presignedUrls[file.id]) {
+          try {
+            const { data } = await axios.get("/api/get-presigned", {
+              params: {
+                bucket: file.bucket,
+                object: file.fileName,
+              },
+            });
+            
+            setPresignedUrls(prev => ({
+              ...prev,
+              [file.id]: data.url,
+            }));
+          } catch (error) {
+            console.error(`Failed to fetch presigned URL for ${file.id}:`, error);
+          }
+        }
+      }
+    };
+
+    fetchPresignedUrls();
+  }, [files, presignedUrls]);
+
+  // Get the appropriate URL for a file
+  const getFileUrl = (file: File) => {
+    if (file.exposure === "private") {
+      return presignedUrls[file.id] || null;
+    }
+    return file.url;
+  };
 
   if (files.length === 0) {
     return (
@@ -52,23 +91,40 @@ export default function FilesGrid({ files }: FilesGridProps) {
               onClick={() => setSelectedImage(file)}
             >
               <div className="aspect-square relative bg-gray-200 dark:bg-gray-700">
-                {file.url && (
+                {getFileUrl(file) && (
                   <Image
-                    src={file.url}
+                    src={getFileUrl(file)!}
                     alt={file.originalName || "Uploaded image"}
                     fill
                     className="object-cover group-hover:scale-105 transition-transform duration-300"
                     sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    unoptimized={file.exposure === "private"}
                   />
+                )}
+                {!getFileUrl(file) && file.exposure === "private" && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-gray-100"></div>
+                  </div>
                 )}
               </div>
               <div className="p-4">
                 <h3 className="font-semibold text-gray-800 dark:text-gray-100 truncate mb-1">
                   {file.originalName || "Unknown"}
                 </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {formatFileSize(file.size)}
-                </p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {formatFileSize(file.size)}
+                  </p>
+                  <span
+                    className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                      file.exposure === "private"
+                        ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                        : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    }`}
+                  >
+                    {file.exposure === "private" ? "🔒 Private" : "🌐 Public"}
+                  </span>
+                </div>
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                   {formatDate(file.createdAt)}
                 </p>
@@ -109,15 +165,21 @@ export default function FilesGrid({ files }: FilesGridProps) {
             </button>
 
             <div className="relative w-full" style={{ maxHeight: "70vh" }}>
-              {selectedImage.url && (
+              {getFileUrl(selectedImage) && (
                 <Image
-                  src={selectedImage.url}
+                  src={getFileUrl(selectedImage)!}
                   alt={selectedImage.originalName || "Uploaded image"}
                   width={1200}
                   height={800}
                   className="w-full h-auto"
                   style={{ maxHeight: "70vh", objectFit: "contain" }}
+                  unoptimized={selectedImage.exposure === "private"}
                 />
+              )}
+              {!getFileUrl(selectedImage) && selectedImage.exposure === "private" && (
+                <div className="flex items-center justify-center p-20">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-gray-100"></div>
+                </div>
               )}
             </div>
 
@@ -136,21 +198,45 @@ export default function FilesGrid({ files }: FilesGridProps) {
                 </div>
                 <div>
                   <span className="text-gray-500 dark:text-gray-400">
+                    Privacy:
+                  </span>
+                  <span
+                    className={`ml-2 px-2 py-0.5 text-xs font-medium rounded-full ${
+                      selectedImage.exposure === "private"
+                        ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                        : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    }`}
+                  >
+                    {selectedImage.exposure === "private" ? "🔒 Private" : "🌐 Public"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400">
                     Uploaded:
                   </span>
                   <span className="ml-2 text-gray-800 dark:text-gray-200">
                     {formatDate(selectedImage.createdAt)}
                   </span>
                 </div>
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400">
+                    Bucket:
+                  </span>
+                  <span className="ml-2 text-gray-800 dark:text-gray-200">
+                    {selectedImage.bucket}
+                  </span>
+                </div>
                 <div className="col-span-2">
                   <span className="text-gray-500 dark:text-gray-400">URL:</span>
                   <a
-                    href={selectedImage.url || "#"}
+                    href={getFileUrl(selectedImage) || "#"}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="ml-2 text-blue-600 dark:text-blue-400 hover:underline break-all"
                   >
-                    {selectedImage.url}
+                    {selectedImage.exposure === "private" 
+                      ? "(Private - Presigned URL)" 
+                      : selectedImage.url}
                   </a>
                 </div>
               </div>
