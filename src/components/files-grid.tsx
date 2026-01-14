@@ -5,19 +5,36 @@ import { useState, useEffect } from "react";
 import { File } from "@/generated/prisma/client";
 import axios from "axios";
 
-interface FilesGridProps {
-  files: File[];
-}
-
-export default function FilesGrid({ files }: FilesGridProps) {
+export default function FilesGrid() {
+  const [files, setFiles] = useState<File[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [presignedUrls, setPresignedUrls] = useState<Record<string, string>>({});
+  const [presignedUrls, setPresignedUrls] = useState<Record<string, string>>(
+    {}
+  );
+
+  // Fetch files from API
+  useEffect(() => {
+    const fetchFiles = async () => {
+      try {
+        setIsLoading(true);
+        const { data } = await axios.get("/api/get-files");
+        setFiles(data);
+      } catch (error) {
+        console.error("Failed to fetch files:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchFiles();
+  }, []);
 
   // Fetch presigned URLs for private images
   useEffect(() => {
     const fetchPresignedUrls = async () => {
-      const privateFiles = files.filter(file => file.exposure === "private");
-      
+      const privateFiles = files.filter((file) => file.exposure === "private");
+
       for (const file of privateFiles) {
         if (file.bucket && file.fileName && !presignedUrls[file.id]) {
           try {
@@ -27,13 +44,16 @@ export default function FilesGrid({ files }: FilesGridProps) {
                 object: file.fileName,
               },
             });
-            
-            setPresignedUrls(prev => ({
+
+            setPresignedUrls((prev) => ({
               ...prev,
               [file.id]: data.url,
             }));
           } catch (error) {
-            console.error(`Failed to fetch presigned URL for ${file.id}:`, error);
+            console.error(
+              `Failed to fetch presigned URL for ${file.id}:`,
+              error
+            );
           }
         }
       }
@@ -49,6 +69,16 @@ export default function FilesGrid({ files }: FilesGridProps) {
     }
     return file.url;
   };
+
+  if (isLoading) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </div>
+    );
+  }
 
   if (files.length === 0) {
     return (
@@ -176,11 +206,12 @@ export default function FilesGrid({ files }: FilesGridProps) {
                   unoptimized={selectedImage.exposure === "private"}
                 />
               )}
-              {!getFileUrl(selectedImage) && selectedImage.exposure === "private" && (
-                <div className="flex items-center justify-center p-20">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-gray-100"></div>
-                </div>
-              )}
+              {!getFileUrl(selectedImage) &&
+                selectedImage.exposure === "private" && (
+                  <div className="flex items-center justify-center p-20">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-gray-100"></div>
+                  </div>
+                )}
             </div>
 
             <div className="p-6 border-t border-gray-200 dark:border-gray-700">
@@ -207,7 +238,9 @@ export default function FilesGrid({ files }: FilesGridProps) {
                         : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                     }`}
                   >
-                    {selectedImage.exposure === "private" ? "🔒 Private" : "🌐 Public"}
+                    {selectedImage.exposure === "private"
+                      ? "🔒 Private"
+                      : "🌐 Public"}
                   </span>
                 </div>
                 <div>
@@ -234,8 +267,8 @@ export default function FilesGrid({ files }: FilesGridProps) {
                     rel="noopener noreferrer"
                     className="ml-2 text-blue-600 dark:text-blue-400 hover:underline break-all"
                   >
-                    {selectedImage.exposure === "private" 
-                      ? "(Private - Presigned URL)" 
+                    {selectedImage.exposure === "private"
+                      ? "(Private - Presigned URL)"
                       : selectedImage.url}
                   </a>
                 </div>

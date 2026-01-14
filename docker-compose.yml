@@ -12,5 +12,14 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
 
+  app:
+    image: teamprodevs/minio-test:latest
+    container_name: app
+    env_file:
+      - ".env"
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
 volumes:
   minio_data:
